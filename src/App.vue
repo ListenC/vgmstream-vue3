@@ -256,16 +256,25 @@ async function createWorkerWrapper() {
     if (loaded) return Promise.resolve()
     if (loadPromise) return loadPromise
 
-    loadPromise = on('load')
-      .then((res) => {
-        clearTimeout(loadTimeout)
-        return res
+    // 只留1条日志
+    console.log('[Worker] 等待初始化...')
+
+    loadPromise = Promise.race([
+      on('load'),
+      new Promise((_, reject) => {
+        setTimeout(() => {
+          const err = new Error('Worker 加载超时（8秒）')
+          console.error('[Worker Error]', err) // 只打错误
+          reject(err)
+        }, 8000)
       })
-      .catch((err) => {
-        loadPromise = null
-        clearTimeout(loadTimeout)
-        throw err
-      })
+    ]).then(res => {
+      console.log('[Worker] 加载成功')
+      return res
+    }).catch(err => {
+      loadPromise = null
+      throw err
+    })
 
     return loadPromise
   }
@@ -273,10 +282,7 @@ async function createWorkerWrapper() {
   worker.addEventListener('message', (event) => {
     const data = event.data;
 
-    // ==============================================
-    // ✅ 终极稳定写法：专门处理 load 消息
     // 不管 symbol 是什么，只要 subject 是 load 就认！
-    // ==============================================
     if (data.subject === 'load') {
       const cbs = events.get('load');
       if (cbs) {
