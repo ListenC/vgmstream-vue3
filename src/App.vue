@@ -285,24 +285,33 @@ async function createWorkerWrapper() {
 
   worker.addEventListener('message', (event) => {
     const data = event.data
-    const key = data.subject === 'load' ? 'load' : (data.symbol || data.subject);
-    const cbs = events.get(key)
 
+    // ==============================================
+    // ✅ 终极兼容：强制处理 load 消息，安卓/网页双端通吃
+    // ==============================================
+    if (data.subject === 'load') {
+      const cbs = events.get('load')
+      if (cbs) {
+        cbs.forEach(({ resolve }) => resolve())
+        events.delete('load')
+        loaded = true
+        console.log('[Worker] 收到启动成功消息！')
+        return
+      }
+    }
+
+    const key = data.symbol || data.subject
+    const cbs = events.get(key)
     if (!cbs) return
 
     cbs.forEach(({ resolve, reject }) => {
       if (data.error) {
         const err = new Error(data.error.message || 'Worker error')
-        Object.assign(err, data.error)
         reject(err)
       } else {
-        if (data.subject === 'load') {
-          loaded = true
-        }
         resolve(data.content)
       }
     })
-
     events.delete(key)
   })
 
