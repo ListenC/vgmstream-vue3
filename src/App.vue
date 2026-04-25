@@ -284,36 +284,37 @@ async function createWorkerWrapper() {
   }
 
   worker.addEventListener('message', (event) => {
-    const data = event.data
+    const data = event.data;
 
     // ==============================================
-    // ✅ 终极兼容：强制处理 load 消息，安卓/网页双端通吃
+    // ✅ 终极稳定写法：专门处理 load 消息
+    // 不管 symbol 是什么，只要 subject 是 load 就认！
     // ==============================================
     if (data.subject === 'load') {
-      const cbs = events.get('load')
+      const cbs = events.get('load');
       if (cbs) {
-        cbs.forEach(({ resolve }) => resolve())
-        events.delete('load')
-        loaded = true
-        console.log('[Worker] 收到启动成功消息！')
-        return
+        loaded = true;
+        cbs.forEach(fn => fn.resolve());
+        events.delete('load');
+        console.log('[Worker] 加载成功！');
       }
+      return;
     }
 
-    const key = data.symbol || data.subject
-    const cbs = events.get(key)
-    if (!cbs) return
+    // 其他正常消息（转换文件等）
+    const key = data.symbol;
+    const cbs = events.get(key);
+    if (!cbs) return;
 
     cbs.forEach(({ resolve, reject }) => {
       if (data.error) {
-        const err = new Error(data.error.message || 'Worker error')
-        reject(err)
+        reject(new Error(data.error?.message || 'Worker 错误'));
       } else {
-        resolve(data.content)
+        resolve(data.content);
       }
-    })
-    events.delete(key)
-  })
+    });
+    events.delete(key);
+  });
 
   worker.addEventListener('error', (e) => {
     console.error('[Worker error]', e)
