@@ -256,21 +256,16 @@ async function createWorkerWrapper() {
     if (loaded) return Promise.resolve()
     if (loadPromise) return loadPromise
 
-    loadPromise = Promise.race([
-      on('load'),
-      new Promise((_, reject) => {
-        loadTimeout = setTimeout(() => {
-          reject(new Error('Worker 加载超时'))
-        }, 10000)
+    loadPromise = on('load')
+      .then((res) => {
+        clearTimeout(loadTimeout)
+        return res
       })
-    ]).then((res) => {
-      clearTimeout(loadTimeout)
-      return res
-    }).catch((err) => {
-      loadPromise = null
-      clearTimeout(loadTimeout)
-      throw err
-    })
+      .catch((err) => {
+        loadPromise = null
+        clearTimeout(loadTimeout)
+        throw err
+      })
 
     return loadPromise
   }
@@ -432,12 +427,7 @@ async function loadFile(file) {
   } catch (err) {
     let errorMsg = err.message || String(err)
     if (errorMsg.includes('Worker') || errorMsg.includes('加载超时')) {
-      errorMsg += '\n\n🔧 故障排查建议：\n' +
-        '1. 确保 public/vgmstream/ 文件夹包含：\n' +
-        '   - cli-worker.js\n' +
-        '   - vgmstream-cli.js\n' +
-        '   - vgmstream-cli.wasm\n' +
-        '2. 重新打包部署'
+      errorMsg
     }
     error.value = '解析失败：' + errorMsg
     console.error('Detailed error:', err)
