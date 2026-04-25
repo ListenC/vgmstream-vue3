@@ -185,46 +185,13 @@ async function createWorkerWrapper() {
   if (workerWrapper) return workerWrapper
 
   async function resolveWorkerPath() {
-    const base = document.baseURI || window.location.href
-
-    const candidates = [
-      './vgmstream/cli-worker.js',
-      'vgmstream/cli-worker.js',
-      '/vgmstream/cli-worker.js',
-      new URL('./vgmstream/cli-worker.js', base).href,
-      new URL('vgmstream/cli-worker.js', base).href,
-      new URL('/vgmstream/cli-worker.js', base).href
-    ]
-
-    const errors = []
-
-    for (const url of candidates) {
-      try {
-        const res = await fetch(url) // ⚠️ 不用 HEAD，兼容 APK
-        if (res.ok) {
-          console.log('[Worker] 使用路径:', url)
-          return url
-        }
-        errors.push(`${url} -> ${res.status}`)
-      } catch (e) {
-        errors.push(`${url} -> ${e.message}`)
-      }
-    }
-
-    throw new Error(
-      'Worker 路径全部失败:\n' +
-      candidates.join('\n') +
-      '\n\n错误:\n' +
-      errors.join('\n')
-    )
+    // 👉 修复：Vite/网页端 直接返回可用路径，不 fetch
+    return './vgmstream/cli-worker.js'
   }
 
-  // ✅ 等待路径解析完成
   const workerPath = await resolveWorkerPath()
-
   console.log('[Worker] 创建:', workerPath)
 
-  // ⚠️ Electron / file:// 必须这样写
   const worker = new Worker(workerPath, { type: 'classic' })
 
   let loaded = false
@@ -286,10 +253,9 @@ async function createWorkerWrapper() {
     return loadPromise
   }
 
-  // ✅ 这里现在是安全的（worker 已经存在）
   worker.addEventListener('message', (event) => {
     const data = event.data
-    const key = data.symbol || data.subject
+    const key = data.subject === 'load' ? 'load' : (data.symbol || data.subject);
     const cbs = events.get(key)
 
     if (!cbs) return
