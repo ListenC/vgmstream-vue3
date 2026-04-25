@@ -185,8 +185,38 @@ async function createWorkerWrapper() {
   if (workerWrapper) return workerWrapper
 
   async function resolveWorkerPath() {
-    // 👉 修复：Vite/网页端 直接返回可用路径，不 fetch
-    return './vgmstream/cli-worker.js'
+    const base = document.baseURI || window.location.href
+
+    const candidates = [
+      './vgmstream/cli-worker.js',
+      'vgmstream/cli-worker.js',
+      '/vgmstream/cli-worker.js',
+      new URL('./vgmstream/cli-worker.js', base).href,
+      new URL('vgmstream/cli-worker.js', base).href,
+      new URL('/vgmstream/cli-worker.js', base).href
+    ]
+
+    const errors = []
+
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url)
+        if (res.ok) {
+          console.log('[Worker] 使用路径:', url)
+          return url
+        }
+        errors.push(`${url} -> ${res.status}`)
+      } catch (e) {
+        errors.push(`${url} -> ${e.message}`)
+      }
+    }
+
+    throw new Error(
+      'Worker 路径全部失败:\n' +
+      candidates.join('\n') +
+      '\n\n错误:\n' +
+      errors.join('\n')
+    )
   }
 
   const workerPath = await resolveWorkerPath()

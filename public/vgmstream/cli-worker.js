@@ -1,4 +1,6 @@
 // 动态计算 wasmDir 路径，支持不同的部署方式（Web、Electron、Android）
+var wasmDir = './'; // 强制安卓用相对路径，不计算复杂URL
+
 var wasmDir = (function() {
   console.log('[Worker] Initializing wasmDir...')
   console.log('[Worker] self.location.href:', self.location.href)
