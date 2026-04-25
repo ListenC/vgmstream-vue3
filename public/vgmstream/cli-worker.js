@@ -152,7 +152,7 @@ function convertFile(data, inputFilename) {
 async function loadCli() {
   // 使用相对路径加载WASM文件，避免复杂的路径计算
   // 由于cli-worker.js本身在vgmstream文件夹中，相对路径会是同级文件
-  var jsUrl = './vgmstream-cli.js'
+  var jsUrl = new URL('./vgmstream-cli.js', self.location.href).href;
   
   console.log('[Worker] Starting to load vgmstream CLI from:', jsUrl)
   console.log('[Worker] Using wasmDir:', wasmDir)
