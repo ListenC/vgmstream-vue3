@@ -238,4 +238,6 @@ addEventListener('message', function(event) {
   messageEvent(event.data)
 })
 
-loadCli()
+setTimeout(() => {
+  loadCli()
+}, 100)
