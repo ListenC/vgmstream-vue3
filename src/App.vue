@@ -184,9 +184,8 @@ function formatTime(seconds) {
 function createWorkerWrapper() {
   if (workerWrapper) return workerWrapper
 
-  // Worker 路径：使用简单的相对路径
-  // Vite 开发服务器和构建都能正确处理这个路径
-  const workerPath = './vgmstream/cli-worker.js'
+  // Worker 路径应基于页面根路径，而不是打包后的模块路径
+  const workerPath = new URL('./vgmstream/cli-worker.js', document.baseURI).href
   
   console.log('[App] Creating Worker with path:', workerPath)
   console.log('[App] Current page URL:', window.location.href)
