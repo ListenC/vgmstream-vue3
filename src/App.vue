@@ -263,10 +263,10 @@ async function createWorkerWrapper() {
       on('load'),
       new Promise((_, reject) => {
         setTimeout(() => {
-          const err = new Error('Worker 加载超时（8秒）')
+          const err = new Error('Worker 加载超时（30秒），请尝试刷新重试')
           console.error('[Worker Error]', err) // 只打错误
           reject(err)
-        }, 8000)
+        }, 30000)
       })
     ]).then(res => {
       console.log('[Worker] 加载成功')
