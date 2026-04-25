@@ -19,14 +19,6 @@
     <div v-if="status" class="status">{{ status }}</div>
     <div v-if="error" class="error">{{ error }}</div>
 
-    <!-- 转换进度条 -->
-    <div v-if="isConverting" class="progress-container">
-      <div class="progress-bar">
-        <div class="progress-fill" :style="{ width: convertProgress + '%' }"></div>
-      </div>
-      <span class="progress-text">{{ convertProgress }}%</span>
-    </div>
-
     <div v-if="info" class="info-card">
       <h3><span class="value">{{ info.name }} 音频信息</span></h3>
       <div class="meta-grid">
@@ -269,7 +261,7 @@ async function createWorkerWrapper() {
       new Promise((_, reject) => {
         loadTimeout = setTimeout(() => {
           reject(new Error('Worker 加载超时'))
-        }, 30000)
+        }, 10000)
       })
     ]).then((res) => {
       clearTimeout(loadTimeout)
@@ -370,22 +362,16 @@ function onDrop(event) {
 }
 
 async function loadFile(file) {
-  status.value = '正在转换并解析文件...'
+  status.value = '正在加载并解析文件，请稍候...'
   error.value = ''
   info.value = null
   convertLog.value = ''
   stop()
   revokeWavUrl()
 
-  isConverting.value = true
+  // 直接移除假进度，不再模拟
+  isConverting.value = false
   convertProgress.value = 0
-
-  // 模拟转换进度
-  convertProgressInterval = setInterval(() => {
-    if (convertProgress.value < 90) {
-      convertProgress.value += Math.random() * 30
-    }
-  }, 200)
 
   try {
     const wrapper = await createWorkerWrapper()
@@ -396,9 +382,6 @@ async function loadFile(file) {
       new Uint8Array(fileBuffer),
       file.name
     )
-
-    convertProgress.value = 100
-    clearInterval(convertProgressInterval)
 
     if (!response || !response.arrayBuffer) {
       throw new Error('未收到转换后的音频数据')
@@ -447,7 +430,6 @@ async function loadFile(file) {
     downloadFilename.value = file.name + '.wav'
     status.value = '解析完成，可以播放'
   } catch (err) {
-    // 提供详细的错误诊断信息
     let errorMsg = err.message || String(err)
     if (errorMsg.includes('Worker') || errorMsg.includes('加载超时')) {
       errorMsg += '\n\n🔧 故障排查建议：\n' +
@@ -455,16 +437,11 @@ async function loadFile(file) {
         '   - cli-worker.js\n' +
         '   - vgmstream-cli.js\n' +
         '   - vgmstream-cli.wasm\n' +
-        '2. 重新运行 npm run build 或 npm run dev\n' +
-        '3. 清除浏览器缓存并刷新页面\n' +
-        '4. 打开浏览器控制台查看详细错误'
+        '2. 重新打包部署'
     }
     error.value = '解析失败：' + errorMsg
     console.error('Detailed error:', err)
     status.value = ''
-  } finally {
-    isConverting.value = false
-    clearInterval(convertProgressInterval)
   }
 }
 
@@ -580,7 +557,7 @@ function stop() {
     savedTime = 0
     currentPlayTime.value = 0
     playbackProgress.value = 0
-    status.value = '已停止'
+    status.value = '处理中……'
   } catch (err) {
     console.error(err)
   }
