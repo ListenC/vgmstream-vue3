@@ -203,7 +203,14 @@ async function loadCli() {
   }
 
   console.log('[Worker] WASM module initialized successfully, sending load message')
-  postMessage({ subject: 'load' })
+  let count = 0
+  const timer = setInterval(() => {
+    postMessage({ subject: 'load' })
+    count++
+    if (count >= 10) {
+      clearInterval(timer)
+    }
+  }, 30)
 }
 
 function errorLoading(file) {
