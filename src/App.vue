@@ -184,26 +184,25 @@ function formatTime(seconds) {
 function createWorkerWrapper() {
   if (workerWrapper) return workerWrapper
 
-  // Worker 路径解析：自动适应不同环境和构建配置
+  // Worker 路径解析
+  // 在开发环境和生产环境中都应该正常工作
   let workerPath = './vgmstream/cli-worker.js'
   
+  // 如果在开发环境中，Vite 会自动处理这个路径
+  // 如果在生产环境中，public 文件会被复制到 dist/vgmstream/
+  console.log('Creating Worker with path:', workerPath)
+  
+  let worker
   try {
-    // 尝试从 document 获取当前脚本基础路径
-    // 这样可以自动适应 Vite 的 base 配置和各种部署方式
-    if (document && document.currentScript) {
-      const scriptSrc = document.currentScript.src
-      const scriptDir = scriptSrc.substring(0, scriptSrc.lastIndexOf('/') + 1)
-      workerPath = scriptDir + 'vgmstream/cli-worker.js'
-    } else if (typeof __VITE_MANIFEST__ !== 'undefined') {
-      // Vite 构建后，尝试使用 manifest
-      workerPath = '/vgmstream/cli-worker.js'
-    }
+    worker = new Worker(workerPath)
   } catch (e) {
-    // 任何错误都保持相对路径，让浏览器的默认解析处理
-    workerPath = './vgmstream/cli-worker.js'
+    console.error('Failed to create Worker with path:', workerPath, e)
+    // 尝试使用绝对路径
+    workerPath = '/vgmstream/cli-worker.js'
+    console.log('Retrying with absolute path:', workerPath)
+    worker = new Worker(workerPath)
   }
   
-  const worker = new Worker(workerPath)
   let loaded = false
   let loadPromise = null
   let symbol = 0
@@ -254,7 +253,16 @@ function createWorkerWrapper() {
       new Promise((_, reject) => {
         // 30秒超时保护，防止Worker加载失败导致程序卡死
         loadTimeout = setTimeout(() => {
-          reject(new Error('Worker加载超时（30秒）。请检查vgmstream文件是否存在，路径是否正确。'))
+          const msg = 'Worker 加载超时（30秒）。\n\n' +
+            '⚠️ 请检查以下项目：\n' +
+            '1. 文件结构：\n' +
+            '   public/vgmstream/cli-worker.js\n' +
+            '   public/vgmstream/vgmstream-cli.js\n' +
+            '   public/vgmstream/vgmstream-cli.wasm\n' +
+            '2. 开发环境：npm run dev\n' +
+            '3. 构建环境：npm run build\n' +
+            '4. 打开浏览器控制台查看详细错误'
+          reject(new Error(msg))
         }, 30000)
       })
     ]).catch((err) => {
@@ -292,7 +300,19 @@ function createWorkerWrapper() {
   })
 
   worker.addEventListener('error', (event) => {
-    const err = new Error('Worker error: ' + event.message)
+    console.error('Worker error event:', event)
+    const err = new Error('Worker 错误: ' + event.message)
+    const callbacks = events.get('load')
+    if (callbacks) {
+      callbacks.forEach(({ reject }) => reject(err))
+      events.delete('load')
+    }
+    clearTimeout(loadTimeout)
+  })
+
+  worker.addEventListener('messageerror', (event) => {
+    console.error('Worker message error:', event)
+    const err = new Error('Worker 消息错误: ' + event.data)
     const callbacks = events.get('load')
     if (callbacks) {
       callbacks.forEach(({ reject }) => reject(err))
@@ -424,8 +444,20 @@ async function loadFile(file) {
     downloadFilename.value = file.name + '.wav'
     status.value = '解析完成，可以播放'
   } catch (err) {
-    error.value = '解析失败：' + (err.message || String(err))
-    console.error(err)
+    // 提供详细的错误诊断信息
+    let errorMsg = err.message || String(err)
+    if (errorMsg.includes('Worker') || errorMsg.includes('加载超时')) {
+      errorMsg += '\n\n🔧 故障排查建议：\n' +
+        '1. 确保 public/vgmstream/ 文件夹包含：\n' +
+        '   - cli-worker.js\n' +
+        '   - vgmstream-cli.js\n' +
+        '   - vgmstream-cli.wasm\n' +
+        '2. 重新运行 npm run build 或 npm run dev\n' +
+        '3. 清除浏览器缓存并刷新页面\n' +
+        '4. 打开浏览器控制台查看详细错误'
+    }
+    error.value = '解析失败：' + errorMsg
+    console.error('Detailed error:', err)
     status.value = ''
   } finally {
     isConverting.value = false

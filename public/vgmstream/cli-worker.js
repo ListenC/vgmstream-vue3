@@ -1,38 +1,51 @@
-// 动态计算wasmDir路径，支持不同的部署方式（Web、Electron、Android）
+// 动态计算 wasmDir 路径，支持不同的部署方式（Web、Electron、Android）
 var wasmDir = (function() {
   try {
-    // Worker 中获取脚本 URL
+    // 获取 Worker 脚本本身的位置（相对可靠的方法）
     var workerUrl = self.location.href
-    if (!workerUrl) throw new Error('Unable to get worker URL')
     
-    // 从完整URL解析出目录路径
-    var url = new URL(workerUrl)
-    var pathname = url.pathname
-    
-    // 移除文件名部分，保留目录路径
-    var lastSlash = pathname.lastIndexOf('/')
-    if (lastSlash === -1) {
-      // 如果没有路径分隔符，使用简单的相对路径
-      return './vgmstream/'
+    // 验证 URL 是否有效
+    if (!workerUrl || workerUrl === 'blob:' || workerUrl.startsWith('blob:')) {
+      throw new Error('Worker URL is not valid for WASM loading')
     }
     
-    var dirPath = pathname.substring(0, lastSlash + 1)
-    
-    // 返回完整的 WASM 目录路径
-    return url.origin + dirPath
+    // 解析 URL 以获取目录部分
+    try {
+      var url = new URL(workerUrl)
+      var pathname = url.pathname
+      
+      // 移除文件名，获取目录路径
+      var lastSlash = pathname.lastIndexOf('/')
+      if (lastSlash === -1) {
+        throw new Error('Cannot parse pathname')
+      }
+      
+      var dirPath = pathname.substring(0, lastSlash + 1)
+      
+      // 构建完整的 WASM 目录 URL
+      var result = url.origin + dirPath
+      console.log('Computed wasmDir:', result)
+      return result
+    } catch (parseError) {
+      throw parseError
+    }
   } catch (e) {
-    // 任何错误都回退到相对路径
-    console.warn('Failed to compute wasmDir from self.location:', e)
-    return './vgmstream/'
+    // 任何错误都使用相对路径作为降级方案
+    console.warn('Failed to compute wasmDir:', e)
+    return './'
   }
 })()
+
+console.log('Using wasmDir:', wasmDir)
 
 var stdoutBuffer = ''
 var stderrBuffer = ''
 var Module = {
   noInitialRun: true,
   locateFile: function(name) {
-    return wasmDir + name
+    var fullPath = wasmDir + name
+    console.log('Locating file:', name, '-> ', fullPath)
+    return fullPath
   },
   preRun: function() {
     FS.init(undefined, function(code) {
@@ -134,41 +147,57 @@ function convertFile(data, inputFilename) {
 
 async function loadCli() {
   var jsUrl = wasmDir + 'vgmstream-cli.js'
+  console.log('Starting to load vgmstream CLI from:', jsUrl)
+  
   var response
   try {
     response = await fetch(jsUrl)
   } catch (error) {
-    console.error('Failed to fetch ' + jsUrl, error)
-    return errorLoading(jsUrl)
+    console.error('Fetch failed for ' + jsUrl, error)
+    return errorLoading(jsUrl + ' (Fetch error: ' + error.message + ')')
   }
+  
   if (!response.ok) {
     console.error('HTTP error loading ' + jsUrl + ': ' + response.status)
-    return errorLoading(jsUrl)
+    return errorLoading(jsUrl + ' (HTTP ' + response.status + ')')
   }
 
+  console.log('Successfully fetched vgmstream-cli.js, evaluating...')
   var cliJs = await response.text()
   try {
     eval.call(null, cliJs)
   } catch (error) {
-    console.error('Error evaluating vgmstream-cli.js', error)
-    return errorLoading(jsUrl)
+    console.error('Error evaluating vgmstream-cli.js:', error)
+    return errorLoading(jsUrl + ' (Eval error: ' + error.message + ')')
   }
 
+  console.log('vgmstream-cli.js evaluated successfully, initializing WASM module...')
   try {
     await new Promise(function(resolve, reject) {
-      Module.onRuntimeInitialized = resolve
-      Module.onAbort = reject
+      var initTimeout = setTimeout(function() {
+        reject(new Error('WASM module initialization timeout (10s)'))
+      }, 10000)
+      
+      Module.onRuntimeInitialized = function() {
+        clearTimeout(initTimeout)
+        resolve()
+      }
+      Module.onAbort = function(error) {
+        clearTimeout(initTimeout)
+        reject(new Error('WASM module aborted: ' + error))
+      }
     })
   } catch (error) {
-    console.error('WASM module initialization failed', error)
-    return errorLoading(wasmDir + 'vgmstream-cli.wasm')
+    console.error('WASM module initialization failed:', error)
+    return errorLoading(wasmDir + 'vgmstream-cli.wasm (Init error: ' + error.message + ')')
   }
 
+  console.log('WASM module initialized successfully')
   postMessage({ subject: 'load' })
 }
 
 function errorLoading(file) {
-  console.error('Error loading ' + file + '. wasmDir=' + wasmDir)
+  console.error('Error loading:', file)
   postMessage({ subject: 'load', error: 'Error loading ' + file })
 }
 
