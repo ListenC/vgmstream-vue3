@@ -28,6 +28,9 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
