@@ -491,9 +491,9 @@ function pause() {
 
   try {
     clearInterval(playbackInterval)
-    // 在停止前保存当前播放位置
+    // 在停止前保存当前播放位置（使用getPlaybackTime获取映射后的实际位置）
     if (audioContext && audioContextStartTime !== undefined) {
-      savedTime = savedTime + (audioContext.currentTime - audioContextStartTime)
+      savedTime = getPlaybackTime()
     }
     // 停止所有source节点
     stopAllSources()
