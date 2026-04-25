@@ -19,8 +19,8 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install dependencies + esbuild
+        run: npm ci && npm install -D esbuild
 
       - name: Build Vue
         run: npm run build
@@ -37,7 +37,6 @@ jobs:
           distribution: 'zulu'
           java-version: 21
 
-      # 👇 重点：打调试包（可直接安装！）
       - name: Build Debug APK
         run: |
           cd android
