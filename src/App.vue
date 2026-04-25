@@ -181,24 +181,52 @@ function formatTime(seconds) {
   return `${m}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`
 }
 
-function createWorkerWrapper() {
+async function createWorkerWrapper() {
   if (workerWrapper) return workerWrapper
 
-  // Worker 路径应基于页面根路径，而不是打包后的模块路径
-  const workerPath = new URL('./vgmstream/cli-worker.js', document.baseURI).href
-  
-  console.log('[App] Creating Worker with path:', workerPath)
-  console.log('[App] Current page URL:', window.location.href)
-  
-  let worker
-  try {
-    worker = new Worker(workerPath)
-    console.log('[App] Worker created successfully')
-  } catch (e) {
-    console.error('[App] Failed to create Worker with path:', workerPath, e)
-    throw new Error(`无法创建 Worker: ${e.message}。请检查 vgmstream/cli-worker.js 文件。`)
+  async function resolveWorkerPath() {
+    const base = document.baseURI || window.location.href
+
+    const candidates = [
+      './vgmstream/cli-worker.js',
+      'vgmstream/cli-worker.js',
+      '/vgmstream/cli-worker.js',
+      new URL('./vgmstream/cli-worker.js', base).href,
+      new URL('vgmstream/cli-worker.js', base).href,
+      new URL('/vgmstream/cli-worker.js', base).href
+    ]
+
+    const errors = []
+
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url) // ⚠️ 不用 HEAD，兼容 APK
+        if (res.ok) {
+          console.log('[Worker] 使用路径:', url)
+          return url
+        }
+        errors.push(`${url} -> ${res.status}`)
+      } catch (e) {
+        errors.push(`${url} -> ${e.message}`)
+      }
+    }
+
+    throw new Error(
+      'Worker 路径全部失败:\n' +
+      candidates.join('\n') +
+      '\n\n错误:\n' +
+      errors.join('\n')
+    )
   }
-  
+
+  // ✅ 等待路径解析完成
+  const workerPath = await resolveWorkerPath()
+
+  console.log('[Worker] 创建:', workerPath)
+
+  // ⚠️ Electron / file:// 必须这样写
+  const worker = new Worker(workerPath, { type: 'classic' })
+
   let loaded = false
   let loadPromise = null
   let symbol = 0
@@ -207,20 +235,19 @@ function createWorkerWrapper() {
 
   function on(type) {
     return new Promise((resolve, reject) => {
-      const callbacks = events.get(type) || new Set()
-      callbacks.add({ resolve, reject })
-      events.set(type, callbacks)
+      const cbs = events.get(type) || new Set()
+      cbs.add({ resolve, reject })
+      events.set(type, cbs)
     })
   }
 
   function send(subject, ...content) {
-    console.log('[App] Sending to Worker:', subject)
     return load().then(() => {
       return new Promise((resolve, reject) => {
         const id = ++symbol
-        const callbacks = events.get(id) || new Set()
-        callbacks.add({ resolve, reject })
-        events.set(id, callbacks)
+        const cbs = events.get(id) || new Set()
+        cbs.add({ resolve, reject })
+        events.set(id, cbs)
 
         const transfer = content.flatMap((item) => {
           if (item instanceof ArrayBuffer) return [item]
@@ -228,102 +255,67 @@ function createWorkerWrapper() {
           return []
         })
 
-        if (transfer.length > 0) {
-          worker.postMessage({ symbol: id, subject, content }, transfer)
-        } else {
-          worker.postMessage({ symbol: id, subject, content })
-        }
+        worker.postMessage(
+          { symbol: id, subject, content },
+          transfer
+        )
       })
     })
   }
 
   function load() {
-    if (loaded) {
-      return Promise.resolve()
-    }
-    if (loadPromise) {
-      return loadPromise
-    }
+    if (loaded) return Promise.resolve()
+    if (loadPromise) return loadPromise
 
     loadPromise = Promise.race([
       on('load'),
       new Promise((_, reject) => {
-        // 30秒超时保护，防止Worker加载失败导致程序卡死
         loadTimeout = setTimeout(() => {
-          const msg = 'Worker 加载超时（30秒）。\n\n' +
-            '⚠️ 请检查以下项目：\n' +
-            '1. 文件结构：\n' +
-            '   public/vgmstream/cli-worker.js\n' +
-            '   public/vgmstream/vgmstream-cli.js\n' +
-            '   public/vgmstream/vgmstream-cli.wasm\n' +
-            '2. 开发环境：npm run dev\n' +
-            '3. 构建环境：npm run build\n' +
-            '4. 打开浏览器控制台查看详细错误'
-          reject(new Error(msg))
+          reject(new Error('Worker 加载超时'))
         }, 30000)
       })
-    ]).catch((err) => {
+    ]).then((res) => {
+      clearTimeout(loadTimeout)
+      return res
+    }).catch((err) => {
       loadPromise = null
       clearTimeout(loadTimeout)
       throw err
-    }).then((result) => {
-      clearTimeout(loadTimeout)
-      return result
     })
+
     return loadPromise
   }
 
+  // ✅ 这里现在是安全的（worker 已经存在）
   worker.addEventListener('message', (event) => {
     const data = event.data
-    console.log('[App] Received message from Worker:', data)
-    
     const key = data.symbol || data.subject
-    const callbacks = events.get(key)
-    
-    if (!callbacks) {
-      console.warn('[App] No callbacks found for key:', key)
-      return
-    }
+    const cbs = events.get(key)
 
-    callbacks.forEach(({ resolve, reject }) => {
+    if (!cbs) return
+
+    cbs.forEach(({ resolve, reject }) => {
       if (data.error) {
-        console.error('[App] Worker returned error:', data.error)
-        const errorObj = new Error(data.error.message || 'Worker error')
-        for (const key in data.error) {
-          errorObj[key] = data.error[key]
-        }
-        reject(errorObj)
+        const err = new Error(data.error.message || 'Worker error')
+        Object.assign(err, data.error)
+        reject(err)
       } else {
         if (data.subject === 'load') {
-          console.log('[App] Worker load completed successfully')
           loaded = true
         }
         resolve(data.content)
       }
     })
+
     events.delete(key)
   })
 
-  worker.addEventListener('error', (event) => {
-    console.error('[App] Worker error event:', event.message, event.filename, event.lineno)
-    const err = new Error(`Worker 错误: ${event.message} (${event.filename}:${event.lineno})`)
-    const callbacks = events.get('load')
-    if (callbacks) {
-      callbacks.forEach(({ reject }) => reject(err))
-      events.delete('load')
-    }
-    clearTimeout(loadTimeout)
+  worker.addEventListener('error', (e) => {
+    console.error('[Worker error]', e)
   })
 
-  worker.addEventListener('messageerror', (event) => {
-    console.error('Worker message error:', event)
-    const err = new Error('Worker 消息错误: ' + event.data)
-    const callbacks = events.get('load')
-    if (callbacks) {
-      callbacks.forEach(({ reject }) => reject(err))
-      events.delete('load')
-    }
-    clearTimeout(loadTimeout)
+  worker.addEventListener('messageerror', (e) => {
+    console.error('[Worker messageerror]', e)
   })
 
   workerWrapper = { send, load }
@@ -390,7 +382,7 @@ async function loadFile(file) {
   }, 200)
 
   try {
-    const wrapper = createWorkerWrapper()
+    const wrapper = await createWorkerWrapper()
     const fileBuffer = await file.arrayBuffer()
 
     const response = await wrapper.send(

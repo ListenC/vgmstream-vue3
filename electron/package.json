@@ -12,7 +12,8 @@
   "devDependencies": {
     "cpy-cli": "^7.0.0",
     "electron": "^28.0.0",
-    "electron-builder": "^24.0.0"
+    "electron-builder": "^24.0.0",
+    "esbuild": "^0.28.0"
   },
   "build": {
     "appId": "com.vgmstream.vue3.exe",
