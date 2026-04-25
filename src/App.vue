@@ -184,7 +184,7 @@ function formatTime(seconds) {
 function createWorkerWrapper() {
   if (workerWrapper) return workerWrapper
 
-  const worker = new Worker('/vgmstream/cli-worker.js')
+  const worker = new Worker('./vgmstream/cli-worker.js')
   let loaded = false
   let loadPromise = null
   let symbol = 0

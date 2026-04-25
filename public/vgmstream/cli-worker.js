@@ -1,4 +1,4 @@
-var wasmDir = '/vgmstream/'
+var wasmDir = '../vgmstream/'
 
 var stdoutBuffer = ''
 var stderrBuffer = ''
@@ -143,8 +143,8 @@ function errorLoading(file) {
 }
 
 async function messageEvent(data) {
-  var output
-  var error
+  let output = null
+  let error = null
   try {
     switch (data.subject) {
       case 'convertFile':
@@ -161,7 +161,7 @@ async function messageEvent(data) {
     symbol: data.symbol,
     subject: data.subject,
     content: output,
-    error: error
+    error: error ? error : null
   }, output && output.arrayBuffer ? [output.arrayBuffer] : [])
 }
 

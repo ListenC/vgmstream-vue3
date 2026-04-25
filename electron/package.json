@@ -1,0 +1,38 @@
+{
+  "name": "vgmstream-vue3",
+  "version": "1.0.0",
+  "main": "main.js",
+  "description": "vgmstream player",
+  "author": "ListenC",
+  "scripts": {
+    "build:web": "cd .. && vite build --mode desktop",
+    "copy": "cpy ../dist ./ --recursive",
+    "build": "npm run build:web && npm run copy && electron-builder"
+  },
+  "devDependencies": {
+    "cpy-cli": "^7.0.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.vgmstream.vue3.exe",
+    "productName": "vgmstream 离线播放器",
+    "directories": {
+      "output": "../exe-dist"
+    },
+    "files": [
+      "dist/**/*",
+      "main.js",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
