@@ -31,6 +31,48 @@ npm install
 npm run build
 ```
 
+### 📱 APK（Android/Capacitor）
+
+#### 前置要求
+
+- Node.js 16+
+- JDK 11 或更高版本
+- Android SDK
+- 配置好 `ANDROID_HOME` 环境变量
+
+#### 构建步骤
+
+1. **安装依赖并构建Web资源**
+
+```bash
+npm install
+npm run build
+```
+
+2. **同步 Capacitor 项目**
+
+```bash
+npx cap sync
+```
+
+3. **构建 Android APK**
+
+```bash
+cd android
+./gradlew assembleRelease
+```
+
+生成的 APK 文件位于：`android/app/build/outputs/apk/release/app-release.apk`
+
+或使用 Android Studio 打开项目并构建。
+
+#### 问题排查
+
+如果打包后文件加载卡死，请确保：
+- ✅ `npm run build` 完成后 `dist/vgmstream/` 目录存在
+- ✅ WASM 文件（`vgmstream-cli.wasm`、`vgmstream-cli.js`）已被复制到 dist 目录
+- ✅ 运行 `npx cap sync` 将资源同步到 Android 项目
+
 ## 第三方开源资源
 
 本项目内置 [vgmstream](https://github.com/vgmstream/vgmstream) 编译产物（r2083），用于游戏音频解析：

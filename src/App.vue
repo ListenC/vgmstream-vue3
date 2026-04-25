@@ -184,10 +184,30 @@ function formatTime(seconds) {
 function createWorkerWrapper() {
   if (workerWrapper) return workerWrapper
 
-  const worker = new Worker('./vgmstream/cli-worker.js')
+  // Worker 路径解析：自动适应不同环境和构建配置
+  let workerPath = './vgmstream/cli-worker.js'
+  
+  try {
+    // 尝试从 document 获取当前脚本基础路径
+    // 这样可以自动适应 Vite 的 base 配置和各种部署方式
+    if (document && document.currentScript) {
+      const scriptSrc = document.currentScript.src
+      const scriptDir = scriptSrc.substring(0, scriptSrc.lastIndexOf('/') + 1)
+      workerPath = scriptDir + 'vgmstream/cli-worker.js'
+    } else if (typeof __VITE_MANIFEST__ !== 'undefined') {
+      // Vite 构建后，尝试使用 manifest
+      workerPath = '/vgmstream/cli-worker.js'
+    }
+  } catch (e) {
+    // 任何错误都保持相对路径，让浏览器的默认解析处理
+    workerPath = './vgmstream/cli-worker.js'
+  }
+  
+  const worker = new Worker(workerPath)
   let loaded = false
   let loadPromise = null
   let symbol = 0
+  let loadTimeout = null
   const events = new Map()
 
   function on(type) {
@@ -229,9 +249,21 @@ function createWorkerWrapper() {
       return loadPromise
     }
 
-    loadPromise = on('load').catch((err) => {
+    loadPromise = Promise.race([
+      on('load'),
+      new Promise((_, reject) => {
+        // 30秒超时保护，防止Worker加载失败导致程序卡死
+        loadTimeout = setTimeout(() => {
+          reject(new Error('Worker加载超时（30秒）。请检查vgmstream文件是否存在，路径是否正确。'))
+        }, 30000)
+      })
+    ]).catch((err) => {
       loadPromise = null
+      clearTimeout(loadTimeout)
       throw err
+    }).then((result) => {
+      clearTimeout(loadTimeout)
+      return result
     })
     return loadPromise
   }
@@ -266,6 +298,7 @@ function createWorkerWrapper() {
       callbacks.forEach(({ reject }) => reject(err))
       events.delete('load')
     }
+    clearTimeout(loadTimeout)
   })
 
   workerWrapper = { send, load }

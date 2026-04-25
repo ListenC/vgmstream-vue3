@@ -1,4 +1,31 @@
-var wasmDir = '../vgmstream/'
+// 动态计算wasmDir路径，支持不同的部署方式（Web、Electron、Android）
+var wasmDir = (function() {
+  try {
+    // Worker 中获取脚本 URL
+    var workerUrl = self.location.href
+    if (!workerUrl) throw new Error('Unable to get worker URL')
+    
+    // 从完整URL解析出目录路径
+    var url = new URL(workerUrl)
+    var pathname = url.pathname
+    
+    // 移除文件名部分，保留目录路径
+    var lastSlash = pathname.lastIndexOf('/')
+    if (lastSlash === -1) {
+      // 如果没有路径分隔符，使用简单的相对路径
+      return './vgmstream/'
+    }
+    
+    var dirPath = pathname.substring(0, lastSlash + 1)
+    
+    // 返回完整的 WASM 目录路径
+    return url.origin + dirPath
+  } catch (e) {
+    // 任何错误都回退到相对路径
+    console.warn('Failed to compute wasmDir from self.location:', e)
+    return './vgmstream/'
+  }
+})()
 
 var stdoutBuffer = ''
 var stderrBuffer = ''
@@ -111,9 +138,11 @@ async function loadCli() {
   try {
     response = await fetch(jsUrl)
   } catch (error) {
+    console.error('Failed to fetch ' + jsUrl, error)
     return errorLoading(jsUrl)
   }
   if (!response.ok) {
+    console.error('HTTP error loading ' + jsUrl + ': ' + response.status)
     return errorLoading(jsUrl)
   }
 
@@ -121,7 +150,7 @@ async function loadCli() {
   try {
     eval.call(null, cliJs)
   } catch (error) {
-    console.error(error)
+    console.error('Error evaluating vgmstream-cli.js', error)
     return errorLoading(jsUrl)
   }
 
@@ -131,7 +160,7 @@ async function loadCli() {
       Module.onAbort = reject
     })
   } catch (error) {
-    console.error(error)
+    console.error('WASM module initialization failed', error)
     return errorLoading(wasmDir + 'vgmstream-cli.wasm')
   }
 
@@ -139,6 +168,7 @@ async function loadCli() {
 }
 
 function errorLoading(file) {
+  console.error('Error loading ' + file + '. wasmDir=' + wasmDir)
   postMessage({ subject: 'load', error: 'Error loading ' + file })
 }
 
