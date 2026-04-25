@@ -184,23 +184,20 @@ function formatTime(seconds) {
 function createWorkerWrapper() {
   if (workerWrapper) return workerWrapper
 
-  // Worker 路径解析
-  // 在开发环境和生产环境中都应该正常工作
-  let workerPath = './vgmstream/cli-worker.js'
+  // Worker 路径：使用简单的相对路径
+  // Vite 开发服务器和构建都能正确处理这个路径
+  const workerPath = './vgmstream/cli-worker.js'
   
-  // 如果在开发环境中，Vite 会自动处理这个路径
-  // 如果在生产环境中，public 文件会被复制到 dist/vgmstream/
-  console.log('Creating Worker with path:', workerPath)
+  console.log('[App] Creating Worker with path:', workerPath)
+  console.log('[App] Current page URL:', window.location.href)
   
   let worker
   try {
     worker = new Worker(workerPath)
+    console.log('[App] Worker created successfully')
   } catch (e) {
-    console.error('Failed to create Worker with path:', workerPath, e)
-    // 尝试使用绝对路径
-    workerPath = '/vgmstream/cli-worker.js'
-    console.log('Retrying with absolute path:', workerPath)
-    worker = new Worker(workerPath)
+    console.error('[App] Failed to create Worker with path:', workerPath, e)
+    throw new Error(`无法创建 Worker: ${e.message}。请检查 vgmstream/cli-worker.js 文件。`)
   }
   
   let loaded = false
@@ -218,6 +215,7 @@ function createWorkerWrapper() {
   }
 
   function send(subject, ...content) {
+    console.log('[App] Sending to Worker:', subject)
     return load().then(() => {
       return new Promise((resolve, reject) => {
         const id = ++symbol
@@ -278,12 +276,19 @@ function createWorkerWrapper() {
 
   worker.addEventListener('message', (event) => {
     const data = event.data
+    console.log('[App] Received message from Worker:', data)
+    
     const key = data.symbol || data.subject
     const callbacks = events.get(key)
-    if (!callbacks) return
+    
+    if (!callbacks) {
+      console.warn('[App] No callbacks found for key:', key)
+      return
+    }
 
     callbacks.forEach(({ resolve, reject }) => {
       if (data.error) {
+        console.error('[App] Worker returned error:', data.error)
         const errorObj = new Error(data.error.message || 'Worker error')
         for (const key in data.error) {
           errorObj[key] = data.error[key]
@@ -291,6 +296,7 @@ function createWorkerWrapper() {
         reject(errorObj)
       } else {
         if (data.subject === 'load') {
+          console.log('[App] Worker load completed successfully')
           loaded = true
         }
         resolve(data.content)
@@ -300,8 +306,8 @@ function createWorkerWrapper() {
   })
 
   worker.addEventListener('error', (event) => {
-    console.error('Worker error event:', event)
-    const err = new Error('Worker 错误: ' + event.message)
+    console.error('[App] Worker error event:', event.message, event.filename, event.lineno)
+    const err = new Error(`Worker 错误: ${event.message} (${event.filename}:${event.lineno})`)
     const callbacks = events.get('load')
     if (callbacks) {
       callbacks.forEach(({ reject }) => reject(err))

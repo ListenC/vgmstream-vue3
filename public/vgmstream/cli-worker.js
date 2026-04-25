@@ -1,42 +1,44 @@
 // 动态计算 wasmDir 路径，支持不同的部署方式（Web、Electron、Android）
 var wasmDir = (function() {
+  console.log('[Worker] Initializing wasmDir...')
+  console.log('[Worker] self.location.href:', self.location.href)
+  
   try {
-    // 获取 Worker 脚本本身的位置（相对可靠的方法）
+    // 首先尝试使用 self.location.href
     var workerUrl = self.location.href
     
-    // 验证 URL 是否有效
-    if (!workerUrl || workerUrl === 'blob:' || workerUrl.startsWith('blob:')) {
-      throw new Error('Worker URL is not valid for WASM loading')
+    // 检查是否是 blob URL（开发环境中Worker可能是blob加载的）
+    if (workerUrl.startsWith('blob:')) {
+      console.log('[Worker] Detected blob: URL, using relative path fallback')
+      return './'
     }
     
     // 解析 URL 以获取目录部分
-    try {
-      var url = new URL(workerUrl)
-      var pathname = url.pathname
-      
-      // 移除文件名，获取目录路径
-      var lastSlash = pathname.lastIndexOf('/')
-      if (lastSlash === -1) {
-        throw new Error('Cannot parse pathname')
-      }
-      
-      var dirPath = pathname.substring(0, lastSlash + 1)
-      
-      // 构建完整的 WASM 目录 URL
-      var result = url.origin + dirPath
-      console.log('Computed wasmDir:', result)
-      return result
-    } catch (parseError) {
-      throw parseError
+    var url = new URL(workerUrl)
+    var pathname = url.pathname
+    
+    // 移除文件名，获取目录路径
+    var lastSlash = pathname.lastIndexOf('/')
+    if (lastSlash === -1) {
+      console.warn('[Worker] Cannot parse pathname, using relative fallback')
+      return './'
     }
+    
+    var dirPath = pathname.substring(0, lastSlash + 1)
+    
+    // 构建完整的 WASM 目录 URL
+    var result = url.origin + dirPath
+    console.log('[Worker] Computed absolute wasmDir:', result)
+    return result
   } catch (e) {
     // 任何错误都使用相对路径作为降级方案
-    console.warn('Failed to compute wasmDir:', e)
+    console.warn('[Worker] Failed to compute wasmDir:', e)
+    console.log('[Worker] Using relative path: ./')
     return './'
   }
 })()
 
-console.log('Using wasmDir:', wasmDir)
+console.log('[Worker] Final wasmDir:', wasmDir)
 
 var stdoutBuffer = ''
 var stderrBuffer = ''
@@ -44,7 +46,7 @@ var Module = {
   noInitialRun: true,
   locateFile: function(name) {
     var fullPath = wasmDir + name
-    console.log('Locating file:', name, '-> ', fullPath)
+    console.log('[Worker] Module.locateFile:', name, '->', fullPath)
     return fullPath
   },
   preRun: function() {
@@ -146,32 +148,36 @@ function convertFile(data, inputFilename) {
 }
 
 async function loadCli() {
-  var jsUrl = wasmDir + 'vgmstream-cli.js'
-  console.log('Starting to load vgmstream CLI from:', jsUrl)
+  // 使用相对路径加载WASM文件，避免复杂的路径计算
+  // 由于cli-worker.js本身在vgmstream文件夹中，相对路径会是同级文件
+  var jsUrl = 'vgmstream-cli.js'
+  
+  console.log('[Worker] Starting to load vgmstream CLI from:', jsUrl)
+  console.log('[Worker] Using wasmDir:', wasmDir)
   
   var response
   try {
     response = await fetch(jsUrl)
   } catch (error) {
-    console.error('Fetch failed for ' + jsUrl, error)
+    console.error('[Worker] Fetch failed for ' + jsUrl, error)
     return errorLoading(jsUrl + ' (Fetch error: ' + error.message + ')')
   }
   
   if (!response.ok) {
-    console.error('HTTP error loading ' + jsUrl + ': ' + response.status)
+    console.error('[Worker] HTTP error loading ' + jsUrl + ': ' + response.status)
     return errorLoading(jsUrl + ' (HTTP ' + response.status + ')')
   }
 
-  console.log('Successfully fetched vgmstream-cli.js, evaluating...')
+  console.log('[Worker] Successfully fetched vgmstream-cli.js, evaluating...')
   var cliJs = await response.text()
   try {
     eval.call(null, cliJs)
   } catch (error) {
-    console.error('Error evaluating vgmstream-cli.js:', error)
+    console.error('[Worker] Error evaluating vgmstream-cli.js:', error)
     return errorLoading(jsUrl + ' (Eval error: ' + error.message + ')')
   }
 
-  console.log('vgmstream-cli.js evaluated successfully, initializing WASM module...')
+  console.log('[Worker] vgmstream-cli.js evaluated successfully, initializing WASM module...')
   try {
     await new Promise(function(resolve, reject) {
       var initTimeout = setTimeout(function() {
@@ -179,25 +185,27 @@ async function loadCli() {
       }, 10000)
       
       Module.onRuntimeInitialized = function() {
+        console.log('[Worker] WASM runtime initialized')
         clearTimeout(initTimeout)
         resolve()
       }
       Module.onAbort = function(error) {
+        console.error('[Worker] WASM module aborted:', error)
         clearTimeout(initTimeout)
         reject(new Error('WASM module aborted: ' + error))
       }
     })
   } catch (error) {
-    console.error('WASM module initialization failed:', error)
+    console.error('[Worker] WASM module initialization failed:', error)
     return errorLoading(wasmDir + 'vgmstream-cli.wasm (Init error: ' + error.message + ')')
   }
 
-  console.log('WASM module initialized successfully')
+  console.log('[Worker] WASM module initialized successfully, sending load message')
   postMessage({ subject: 'load' })
 }
 
 function errorLoading(file) {
-  console.error('Error loading:', file)
+  console.error('[Worker] Error loading:', file)
   postMessage({ subject: 'load', error: 'Error loading ' + file })
 }
 
