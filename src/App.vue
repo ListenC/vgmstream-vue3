@@ -927,9 +927,17 @@ async function downloadAllTracks() {
   const originalFileName = info.value.name || "audio"
   const baseName = originalFileName.replace(/\.[^/.]+$/, "")
 
-  // =========== 安卓版本 ===========
+    // =========== 安卓版本 ===========
   if (isAndroidApp) {
     try {
+      // ✅ 清理文件名：移除路径分隔符和非法字符
+      const sanitizeFilename = (name) => {
+        return name
+          .replace(/[/\\:*?"<>|]/g, '_')  // 移除非法字符
+          .replace(/_{2,}/g, '_')         // 合并多个下划线
+          .trim()
+      }
+
       status.value = "正在保存音频流..."
       for (const track of tracks) {
         const uint8 = new Uint8Array(track.wavData)
@@ -939,8 +947,10 @@ async function downloadAllTracks() {
         }
         const base64 = btoa(binary)
 
+        const filename = sanitizeFilename(track.displayName) + '.wav'
+
         await Filesystem.writeFile({
-          path: track.displayName + '.wav',
+          path: filename,
           data: base64,
           directory: Directory.Documents,
           recursive: true
@@ -1089,14 +1099,52 @@ async function downloadTrack(index) {
   const track = info.value.allTracks[index]
   if (!track) return
 
+  // ✅ 清理文件名：移除路径分隔符和非法字符
+  const sanitizeFilename = (name) => {
+    return name
+      .replace(/[/\\:*?"<>|]/g, '_')  // 移除非法字符
+      .replace(/_{2,}/g, '_')         // 合并多个下划线
+      .trim()
+  }
+
   const wavUint8 = new Uint8Array(track.wavData)
   const arrayBuffer = wavUint8.buffer.slice(0)
+  const filename = sanitizeFilename(track.displayName) + '.wav'
+
+  // =========== 安卓版本 ===========
+  if (isAndroidApp) {
+    try {
+      status.value = "正在保存..."
+      const uint8 = new Uint8Array(track.wavData)
+      let binary = ''
+      for (let i = 0; i < uint8.length; i++) {
+        binary += String.fromCharCode(uint8[i])
+      }
+      const base64 = btoa(binary)
+
+      await Filesystem.writeFile({
+        path: filename,
+        data: base64,
+        directory: Directory.Documents,
+        recursive: true
+      })
+
+      error.value = ''
+      status.value = `已保存到 文档/${filename}`
+    } catch (e) {
+      console.error('安卓保存失败：', e)
+      error.value = '安卓保存失败：' + e.message
+    }
+    return
+  }
+
+  // =========== 网页版本 ===========
   const blob = new Blob([arrayBuffer], { type: 'audio/wav' })
   const url = URL.createObjectURL(blob)
 
   const a = document.createElement('a')
   a.href = url
-  a.download = track.displayName + '.wav'
+  a.download = filename
   document.body.appendChild(a)
   a.click()
   setTimeout(() => {
