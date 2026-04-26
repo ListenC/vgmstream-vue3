@@ -137,7 +137,8 @@ function getOutput(output, inputFilename, outputFilename) {
   deleteFile(outputFilename)
   output.inputFilename = inputFilename
   output.outputFilename = inputFilename + '.wav'
-  output.wavData = Array.from(wavData)
+  // ✅ 优化：保留 Uint8Array，不转换为 Array（为 Transferable 做准备）
+  output.wavData = wavData
   return output
 }
 
@@ -184,6 +185,7 @@ function convertFile(data, inputFilename, streamIndices) {
   writeFile(inputFilename, data)
   
   var results = []
+  var transferables = []  // ✅ 收集需要转移的 ArrayBuffer
   
   if (!streamIndices || streamIndices.length === 0) {
     streamIndices = [0]
@@ -209,13 +211,17 @@ function convertFile(data, inputFilename, streamIndices) {
       if (wavData) {
         //console.log('[Worker] Successfully read', wavData.length, 'bytes from', outputFilename)
 
+        // ✅ 优化：保留 Uint8Array，并记录其 buffer 用于 transfer
         results.push({
           streamIndex: streamIndex,
           outputFilename: inputFilename + '_stream_' + streamIndex + '.wav',
-          wavData: Array.from(wavData),
+          wavData: wavData,  // 保留 Uint8Array，不转换
           stdout: output.stdout,
           stderr: output.stderr,
         });
+
+        // ✅ 将此 buffer 添加到转移列表
+        transferables.push(wavData.buffer);
 
         deleteFile(outputFilename)
       } else {
@@ -238,7 +244,8 @@ function convertFile(data, inputFilename, streamIndices) {
   return {
     success: true,
     results: results,
-    totalStreams: results.length
+    totalStreams: results.length,
+    transferables: transferables  // ✅ 返回 transfer 列表
   };
 }
 
@@ -307,6 +314,8 @@ function errorLoading(file) {
 async function messageEvent(data) {
   let output = null
   let error = null
+  let transferables = []  // ✅ 用于收集需要转移的对象
+  
   try {
     switch (data.subject) {
       case 'getStreamInfo':
@@ -314,6 +323,11 @@ async function messageEvent(data) {
         break
       case 'convertFile':
         output = convertFile(data.content[0], data.content[1], data.content[2])
+        // ✅ 获取 transfer 列表
+        if (output && output.transferables) {
+          transferables = output.transferables
+          delete output.transferables  // 不要发送这个字段给主线程
+        }
         break
       default:
         error = new Error('Unknown message subject ' + data.subject)
@@ -322,18 +336,19 @@ async function messageEvent(data) {
     error = cleanError(e)
   }
 
+  // ✅ 优化：移除重复的 Array.from() 转换，直接保留 Uint8Array
   if (output && output.results) {
     output.results = output.results.map(function(result) {
       return {
         streamIndex: result.streamIndex,
         outputFilename: result.outputFilename,
-        wavData: Array.from(result.wavData),
+        wavData: result.wavData,  // ✅ 保留 Uint8Array，不转换
         stdout: result.stdout,
         stderr: result.stderr
       }
     })
   } else if (output && output.wavData) {
-    output.wavData = Array.from(output.wavData)
+    // wavData 已经在 getOutput 中保留为 Uint8Array，无需转换
   }
 
   const message = {
@@ -343,7 +358,15 @@ async function messageEvent(data) {
     error: error ? error : null
   }
 
-  postMessage(message)
+  // ✅ 核心优化：使用 postMessage 的第二个参数传递 transfer 列表
+  // 这样可以零复制地转移 ArrayBuffer 所有权
+  if (transferables.length > 0) {
+    console.log('[Worker] Transferring', transferables.length, 'ArrayBuffer(s), total size:', 
+      transferables.reduce((sum, buf) => sum + buf.byteLength, 0), 'bytes')
+    postMessage(message, transferables)
+  } else {
+    postMessage(message)
+  }
 }
 
 addEventListener('message', function(event) {

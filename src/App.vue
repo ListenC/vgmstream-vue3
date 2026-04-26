@@ -530,7 +530,26 @@ async function loadFile(file) {
 
     status.value = `成功加载 ${allTracks.length} 个音频流`
 
-    await preDecodeAllTracks(allTracks)
+        // ✅ 优化：后台异步预解码第一个轨道（不阻塞UI）
+    // 其他轨道在用户播放时再解码
+    if (allTracks[0] && !allTracks[0]._decodedBuffer && audioContext) {
+      Promise.resolve().then(() => {
+        const track = allTracks[0]
+        if (track.wavData && audioContext) {
+          const wavUint8 = new Uint8Array(track.wavData)
+          const arrayBuffer = wavUint8.buffer.slice(
+            wavUint8.byteOffset,
+            wavUint8.byteOffset + wavUint8.byteLength
+          )
+          audioContext.decodeAudioData(arrayBuffer)
+            .then(buffer => {
+              track._decodedBuffer = buffer
+              console.log('[预解码] 第一个轨道解码完成')
+            })
+            .catch(() => {})
+        }
+      })
+    }
 
   } catch (err) {
     error.value = '解析失败：' + err.message
@@ -739,11 +758,17 @@ async function play() {
     status.value = '播放中'
 
     clearInterval(playbackInterval)
+    
+    // ✅ 优化：根据音频时长动态调整刷新频率
+    // 长音频刷新频率更低，减少 Vue 重新渲染
+    const updateInterval = info.value.duration > 300 ? 300 : 
+                          info.value.duration > 60 ? 200 : 100
+    
     playbackInterval = setInterval(() => {
       const time = getPlaybackTime()
       currentPlayTime.value = Math.min(time, info.value.duration)
       playbackProgress.value = Math.min((time / info.value.duration) * 100, 100)
-    }, 100)
+    }, updateInterval)
   } catch (err) {
     error.value = '播放失败：' + err.message
     console.error(err)
@@ -974,7 +999,7 @@ async function downloadAllTracks() {
     document.body.removeChild(a)
     URL.revokeObjectURL(zipUrl)
     status.value = "ZIP 下载完成"
-  }, 200)
+  }, 100)  // ✅ 从 200 改为 100，更快释放内存
 }
 
 async function playTrack(index) {
@@ -1077,7 +1102,7 @@ async function downloadTrack(index) {
   setTimeout(() => {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }, 120)
+  }, 80)
 }
 
 onUnmounted(() => {

@@ -1,7 +1,7 @@
 {
   "name": "vgmstream-vue3",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,6 +23,7 @@
     "@vitejs/plugin-vue": "^6.0.6",
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.0",
+    "terser": "^5.46.2",
     "vite": "^8.0.10"
   }
 }

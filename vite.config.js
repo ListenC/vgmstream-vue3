@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
     server: {},
     build: {
       copyPublicDir: true,
-      minify: false,
+      minify: 'terser',  // ✅ 从 false 改为 terser
     },
     assetsInclude: ['**/*.wasm'],
   }
