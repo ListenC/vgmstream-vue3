@@ -17,17 +17,14 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: 安装根项目依赖
+      - name: 安装根依赖
         run: npm ci
 
-      - name: 进入 electron 目录
-        run: cd electron && npm ci
-
-      - name: 打包 EXE
-        run: cd electron && npm run build
+      - name: 进入 electron 目录并打包
+        run: cd electron && npm ci && npm run build
 
       - name: 上传 EXE 成品
         uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: electron/exe-dist/*.exe
+          path: exe-dist/*.exe
