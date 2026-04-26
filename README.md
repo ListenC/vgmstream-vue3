@@ -4,6 +4,19 @@
 
 通过 Vue 3 实现 vgmstream 解析游戏音频并实时播放
 
+---
+
+# 🚀 直接下载使用（无需自行构建）
+GitHub Actions 自动构建全平台版本：
+👉 [Releases 下载页](https://github.com/ListenC/vgmstream-vue3/releases)
+
+支持：
+- 📱 Android APK
+- 🖥 Windows EXE 安装包
+- 🌐 Web 离线压缩包
+
+---
+
 ## 构建
 
 ### 🌐 Web

@@ -2,30 +2,33 @@ name: Build Web
 
 on:
   push:
-    branches: [ main, master ]  # 推代码就自动打包
-  workflow_dispatch:            # 也可以手动点一下打包
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: 'npm' }
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build web (only)
-        run: npm run build  # 只执行打包，生成 dist
-
-      - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: web-dist
           path: dist
+
+      # tag 时自动上传到 Release
+      - name: Zip web dist
+        run: zip -r web-dist.zip dist/
+
+      - name: Upload Web to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: web-dist.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
