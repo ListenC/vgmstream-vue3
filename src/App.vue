@@ -927,7 +927,7 @@ async function downloadAllTracks() {
   const originalFileName = info.value.name || "audio"
   const baseName = originalFileName.replace(/\.[^/.]+$/, "")
 
-    // =========== 安卓版本 ===========
+  // =========== 安卓版本 ===========
   if (isAndroidApp) {
     try {
       // ✅ 清理文件名：移除路径分隔符和非法字符
@@ -939,25 +939,47 @@ async function downloadAllTracks() {
       }
 
       status.value = "正在保存音频流..."
+
+      // ✅ 多轨时创建一个目录，单轨不创建
+      const dirName = tracks.length > 1 ? sanitizeFilename(baseName) : null
+      let savedCount = 0
+
       for (const track of tracks) {
-        const uint8 = new Uint8Array(track.wavData)
-        let binary = ''
-        for (let i = 0; i < uint8.length; i++) {
-          binary += String.fromCharCode(uint8[i])
+        try {
+          const uint8 = new Uint8Array(track.wavData)
+          let binary = ''
+          for (let i = 0; i < uint8.length; i++) {
+            binary += String.fromCharCode(uint8[i])
+          }
+          const base64 = btoa(binary)
+
+          const filename = sanitizeFilename(track.displayName) + '.wav'
+
+          // ✅ 如果是多轨，使用目录路径；单轨直接存储
+          const filePath = dirName ? `${dirName}/${filename}` : filename
+
+          await Filesystem.writeFile({
+            path: filePath,
+            data: base64,
+            directory: Directory.Documents,
+            recursive: true
+          })
+
+          savedCount++
+          status.value = `正在保存音频流... (${savedCount}/${tracks.length})`
+
+          // ✅ 添加延迟避免文件系统过载
+          await new Promise(resolve => setTimeout(resolve, 100))
+        } catch (trackError) {
+          console.error(`保存 ${track.displayName} 失败：`, trackError)
+          error.value = `保存 ${track.displayName} 失败：${trackError.message}`
+          // 继续处理下一个文件，不中断
         }
-        const base64 = btoa(binary)
-
-        const filename = sanitizeFilename(track.displayName) + '.wav'
-
-        await Filesystem.writeFile({
-          path: filename,
-          data: base64,
-          directory: Directory.Documents,
-          recursive: true
-        })
       }
+
       error.value = ''
-      status.value = `已保存 ${tracks.length} 个音频流到 文档 文件夹`
+      const location = dirName ? `文档/${dirName}` : '文档'
+      status.value = `成功保存 ${savedCount} 个音频流到 ${location}`
     } catch (e) {
       console.error('安卓保存失败：', e)
       error.value = '安卓保存失败：' + e.message
@@ -1107,14 +1129,13 @@ async function downloadTrack(index) {
       .trim()
   }
 
-  const wavUint8 = new Uint8Array(track.wavData)
-  const arrayBuffer = wavUint8.buffer.slice(0)
   const filename = sanitizeFilename(track.displayName) + '.wav'
 
   // =========== 安卓版本 ===========
   if (isAndroidApp) {
     try {
       status.value = "正在保存..."
+      
       const uint8 = new Uint8Array(track.wavData)
       let binary = ''
       for (let i = 0; i < uint8.length; i++) {
@@ -1131,14 +1152,18 @@ async function downloadTrack(index) {
 
       error.value = ''
       status.value = `已保存到 文档/${filename}`
+      console.log('[Android] 文件保存成功:', filename)
     } catch (e) {
-      console.error('安卓保存失败：', e)
-      error.value = '安卓保存失败：' + e.message
+      console.error('[Android] 保存失败：', e)
+      error.value = '保存失败：' + (e.message || '未知错误')
+      status.value = ''
     }
     return
   }
 
   // =========== 网页版本 ===========
+  const wavUint8 = new Uint8Array(track.wavData)
+  const arrayBuffer = wavUint8.buffer.slice(0)
   const blob = new Blob([arrayBuffer], { type: 'audio/wav' })
   const url = URL.createObjectURL(blob)
 
