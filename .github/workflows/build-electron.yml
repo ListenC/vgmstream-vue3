@@ -1,0 +1,33 @@
+name: Build Electron EXE
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: 安装根项目依赖
+        run: npm ci
+
+      - name: 进入 electron 目录
+        run: cd electron && npm ci
+
+      - name: 打包 EXE
+        run: cd electron && npm run build
+
+      - name: 上传 EXE 成品
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: electron/exe-dist/*.exe
