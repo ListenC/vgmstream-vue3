@@ -877,49 +877,6 @@ function startDragSeek(event) {
   document.addEventListener('mouseup', onMouseUp)
 }
 
-async function downloadWav() {
-  if (!wavUrl.value || !downloadFilename.value) return
-
-  // 安卓逻辑
-  if (isAndroidApp) {
-    try {
-      const res = await fetch(wavUrl.value)
-      const buf = await res.arrayBuffer()
-      const uint8 = new Uint8Array(buf)
-      let binary = ''
-      for (let i = 0; i < uint8.length; i++) {
-        binary += String.fromCharCode(uint8[i])
-      }
-      const base64 = btoa(binary)
-
-      await Filesystem.writeFile({
-        path: downloadFilename.value,
-        data: base64,
-        directory: Directory.Documents,
-        recursive: true
-      })
-
-      error.value = ''
-      status.value = `已保存到 文档/${downloadFilename.value}`
-    } catch (e) {
-      console.error('安卓保存失败：', e)
-      error.value = '安卓保存失败，请检查权限'
-    }
-    return
-  }
-
-  // ✅ 网页端：直接下载，不读取、不解析、不阻塞！
-  const a = document.createElement('a')
-  a.href = wavUrl.value
-  a.download = downloadFilename.value
-  document.body.appendChild(a)
-  a.click()
-
-  setTimeout(() => {
-    document.body.removeChild(a)
-  }, 120)
-}
-
 async function downloadAllTracks() {
   if (!info.value || !info.value.allTracks) return
 
@@ -927,51 +884,91 @@ async function downloadAllTracks() {
   const originalFileName = info.value.name || "audio"
   const baseName = originalFileName.replace(/\.[^/.]+$/, "")
 
+  // ✅ 清理文件名：移除路径分隔符和非法字符
+  const sanitizeFilename = (name) => {
+    return name
+      .replace(/[/\\:*?"<>|]/g, '_')  // 移除非法字符
+      .replace(/_{2,}/g, '_')         // 合并多个下划线
+      .trim()
+  }
+
   // =========== 安卓版本 ===========
   if (isAndroidApp) {
     try {
-      // ✅ 清理文件名：移除路径分隔符和非法字符
-      const sanitizeFilename = (name) => {
-        return name
-          .replace(/[/\\:*?"<>|]/g, '_')  // 移除非法字符
-          .replace(/_{2,}/g, '_')         // 合并多个下划线
-          .trim()
+      status.value = "正在准备..."
+      
+      // ✅ 多轨时创建一个目录，单轨不创建
+      const dirName = tracks.length > 1 ? sanitizeFilename(baseName) : null
+      let savedCount = 0
+      
+      // ✅ 如果是多轨，先创建一个测试文件来确保目录存在（只做一次）
+      if (dirName) {
+        const testPath = `${dirName}/.created`
+        try {
+          console.log('[Android] 创建目录:', dirName)
+          await Filesystem.writeFile({
+            path: testPath,
+            data: '',
+            directory: Directory.Documents,
+            recursive: true
+          })
+          // 删除测试文件
+          try {
+            await Filesystem.deleteFile({
+              path: testPath,
+              directory: Directory.Documents
+            })
+          } catch (e) {
+            // 删除失败也不影响
+          }
+          console.log('[Android] 目录创建成功')
+        } catch (e) {
+          console.error('[Android] 目录创建失败:', e)
+          error.value = '创建目录失败：' + e.message
+          return
+        }
+        
+        // ✅ 等待一下，确保目录真正创建完成
+        await new Promise(resolve => setTimeout(resolve, 300))
       }
 
       status.value = "正在保存音频流..."
 
-      // ✅ 多轨时创建一个目录，单轨不创建
-      const dirName = tracks.length > 1 ? sanitizeFilename(baseName) : null
-      let savedCount = 0
-
-      for (const track of tracks) {
+      // ✅ 循环保存每个文件
+      for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i]
         try {
+          console.log(`[Android] 开始保存文件 ${i + 1}/${tracks.length}: ${track.displayName}`)
+          
+          // ✅ 编码数据（可能耗时）
           const uint8 = new Uint8Array(track.wavData)
           let binary = ''
-          for (let i = 0; i < uint8.length; i++) {
-            binary += String.fromCharCode(uint8[i])
+          for (let j = 0; j < uint8.length; j++) {
+            binary += String.fromCharCode(uint8[j])
           }
           const base64 = btoa(binary)
-
+          
           const filename = sanitizeFilename(track.displayName) + '.wav'
-
-          // ✅ 如果是多轨，使用目录路径；单轨直接存储
           const filePath = dirName ? `${dirName}/${filename}` : filename
+          
+          console.log(`[Android] 保存路径: ${filePath}`)
 
+          // ✅ 关键：不要使用 recursive: true，因为目录已经存在或已创建
           await Filesystem.writeFile({
             path: filePath,
             data: base64,
             directory: Directory.Documents,
-            recursive: true
+            recursive: false  // ✅ 改为 false
           })
 
           savedCount++
           status.value = `正在保存音频流... (${savedCount}/${tracks.length})`
+          console.log(`[Android] 保存成功: ${filename}`)
 
-          // ✅ 添加延迟避免文件系统过载
-          await new Promise(resolve => setTimeout(resolve, 100))
+          // ✅ 增加延迟：300ms 给文件系统反应时间
+          await new Promise(resolve => setTimeout(resolve, 300))
         } catch (trackError) {
-          console.error(`保存 ${track.displayName} 失败：`, trackError)
+          console.error(`[Android] 保存文件失败 (${track.displayName}):`, trackError)
           error.value = `保存 ${track.displayName} 失败：${trackError.message}`
           // 继续处理下一个文件，不中断
         }
@@ -980,9 +977,11 @@ async function downloadAllTracks() {
       error.value = ''
       const location = dirName ? `文档/${dirName}` : '文档'
       status.value = `成功保存 ${savedCount} 个音频流到 ${location}`
+      console.log('[Android] 全部保存完成')
     } catch (e) {
-      console.error('安卓保存失败：', e)
-      error.value = '安卓保存失败：' + e.message
+      console.error('[Android] 批量保存失败：', e)
+      error.value = '批量保存失败：' + e.message
+      status.value = ''
     }
     return
   }
@@ -1031,7 +1030,7 @@ async function downloadAllTracks() {
     document.body.removeChild(a)
     URL.revokeObjectURL(zipUrl)
     status.value = "ZIP 下载完成"
-  }, 100)  // ✅ 从 200 改为 100，更快释放内存
+  }, 100)
 }
 
 async function playTrack(index) {
@@ -1135,14 +1134,30 @@ async function downloadTrack(index) {
   if (isAndroidApp) {
     try {
       status.value = "正在保存..."
+      console.log('[Android] downloadTrack 开始:', filename)
       
+      // ✅ 关键：编码操作可能耗时，需要确保正确处理
+      console.log('[Android] 开始编码数据...')
       const uint8 = new Uint8Array(track.wavData)
+      
+      // ✅ 分块编码，避免一次性编码导致卡顿
       let binary = ''
-      for (let i = 0; i < uint8.length; i++) {
-        binary += String.fromCharCode(uint8[i])
+      const chunkSize = 8192
+      for (let i = 0; i < uint8.length; i += chunkSize) {
+        const end = Math.min(i + chunkSize, uint8.length)
+        for (let j = i; j < end; j++) {
+          binary += String.fromCharCode(uint8[j])
+        }
+        // 让出控制权
+        if (i % (chunkSize * 10) === 0) {
+          await new Promise(resolve => setTimeout(resolve, 1))
+        }
       }
+      
+      console.log('[Android] 编码完成，开始转 base64...')
       const base64 = btoa(binary)
-
+      
+      console.log('[Android] 保存文件到:', filename)
       await Filesystem.writeFile({
         path: filename,
         data: base64,
