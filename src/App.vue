@@ -855,7 +855,7 @@ function startDragSeek(event) {
 async function downloadWav() {
   if (!wavUrl.value || !downloadFilename.value) return
 
-  // 安卓逻辑不变
+  // 安卓逻辑
   if (isAndroidApp) {
     try {
       const res = await fetch(wavUrl.value)
@@ -865,7 +865,7 @@ async function downloadWav() {
       for (let i = 0; i < uint8.length; i++) {
         binary += String.fromCharCode(uint8[i])
       }
-      const base6 = btoa(binary)
+      const base64 = btoa(binary)
 
       await Filesystem.writeFile({
         path: downloadFilename.value,
@@ -900,10 +900,37 @@ async function downloadAllTracks() {
 
   const tracks = info.value.allTracks
   const originalFileName = info.value.name || "audio"
-
-  // 去掉扩展名，用作zip文件名
   const baseName = originalFileName.replace(/\.[^/.]+$/, "")
 
+  // =========== 安卓版本 ===========
+  if (isAndroidApp) {
+    try {
+      status.value = "正在保存音轨..."
+      for (const track of tracks) {
+        const uint8 = new Uint8Array(track.wavData)
+        let binary = ''
+        for (let i = 0; i < uint8.length; i++) {
+          binary += String.fromCharCode(uint8[i])
+        }
+        const base64 = btoa(binary)
+
+        await Filesystem.writeFile({
+          path: track.displayName + '.wav',
+          data: base64,
+          directory: Directory.Documents,
+          recursive: true
+        })
+      }
+      error.value = ''
+      status.value = `已保存 ${tracks.length} 个音轨到文档文件夹`
+    } catch (e) {
+      console.error('安卓保存失败：', e)
+      error.value = '安卓保存失败：' + e.message
+    }
+    return
+  }
+
+  // =========== 网页版本 ===========
   if (tracks.length === 1) {
     // 单轨：直接下载
     status.value = "正在下载..."
@@ -923,21 +950,17 @@ async function downloadAllTracks() {
     return
   }
 
-  // ================
   // 多轨：打包 ZIP
-  // ================
   status.value = "正在生成 ZIP 压缩包..."
-
   const zip = new JSZip()
   for (const track of tracks) {
     const name = track.displayName + ".wav"
     zip.file(name, track.wavData)
   }
 
-  // 生成 zip blob
   const zipBlob = await zip.generateAsync({
     type: "blob",
-    compression: "STORE" // 不压缩（音频没必要）
+    compression: "STORE"
   })
 
   const zipUrl = URL.createObjectURL(zipBlob)
@@ -1363,9 +1386,11 @@ button:disabled {
 .playlist-list {
   max-height: 300px;
   overflow-y: auto;
+  overflow-x: auto;
   border-radius: 8px;
   background: white;
   border: 1px solid #e2e8f0;
+  -webkit-overflow-scrolling: touch;
 }
 
 .playlist-item {
@@ -1376,6 +1401,7 @@ button:disabled {
   border-bottom: 1px solid #f1f5f9;
   cursor: pointer;
   transition: background 0.2s;
+  min-width: 0;
 }
 
 .playlist-item:last-child {
@@ -1396,12 +1422,15 @@ button:disabled {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 70%;
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
 }
 
 .track-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .btn-play-small, .btn-download-small {
@@ -1448,6 +1477,19 @@ button:disabled {
   button,
   .download-link {
     min-width: auto;
+  }
+
+  .playlist-list {
+    max-height: 250px;
+  }
+
+  .track-name {
+    font-size: 0.9rem;
+  }
+
+  .btn-play-small, .btn-download-small {
+    padding: 5px 8px;
+    font-size: 0.85rem;
   }
 }
 </style>
