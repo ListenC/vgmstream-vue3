@@ -67,14 +67,13 @@
         <button @click="pause" :disabled="!isPlaying" class="secondary">
           ⏸ 暂停
         </button>
-        <a
+        <button
           v-if="wavUrl"
-          :href="wavUrl"
-          :download="downloadFilename"
+          @click="downloadWav"
           class="download-link"
         >
           ⬇ 下载 WAV
-        </a>
+        </button>
       </div>
 
       <!-- 播放进度条 -->
@@ -616,6 +615,25 @@ function startDragSeek(event) {
   
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', onMouseUp)
+}
+
+// 安卓 + 网页 通用下载 WAV
+function downloadWav() {
+  if (!wavUrl.value || !downloadFilename.value) return
+
+  // 创建虚拟a标签（兼容安卓）
+  const a = document.createElement('a')
+  a.href = wavUrl.value
+  a.download = downloadFilename.value
+  a.style.display = 'none'
+
+  document.body.appendChild(a)
+  a.click() // 强制触发点击
+
+  // 延迟移除，保证安卓能响应
+  setTimeout(() => {
+    document.body.removeChild(a)
+  }, 100)
 }
 
 onUnmounted(() => {
