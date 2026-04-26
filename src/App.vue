@@ -103,6 +103,11 @@
 
 <script setup>
 import { ref, onUnmounted } from 'vue'
+import { Filesystem, Directory } from '@capacitor/filesystem'
+import { Capacitor } from '@capacitor/core'
+
+// 判断是否安卓原生环境
+const isAndroidApp = Capacitor.getPlatform() === 'android'
 
 const status = ref('')
 const error = ref('')
@@ -618,22 +623,50 @@ function startDragSeek(event) {
 }
 
 // 安卓 + 网页 通用下载 WAV
-function downloadWav() {
+// 万能双端下载
+async function downloadWav() {
   if (!wavUrl.value || !downloadFilename.value) return
 
-  // 创建虚拟a标签（兼容安卓）
+  // 取出二进制 arrayBuffer（关键：不用blob，直接存源数据）
+  const res = await fetch(wavUrl.value)
+  const buf = await res.arrayBuffer()
+
+  // ========== 安卓原生：用 Capacitor 写入文件 ==========
+  if (isAndroidApp) {
+    try {
+      // 转为 Capacitor 需要的 base64
+      const uint8 = new Uint8Array(buf)
+      let binary = ''
+      for (let i = 0; i < uint8.length; i++) {
+        binary += String.fromCharCode(uint8[i])
+      }
+      const base64 = btoa(binary)
+
+      await Filesystem.writeFile({
+        path: downloadFilename.value,
+        data: base64,
+        directory: Directory.Documents,
+        recursive: true
+      })
+
+      error.value = ''
+      status.value = `已保存到 文档/${downloadFilename.value}`
+    } catch (e) {
+      console.error('安卓保存失败：', e)
+      error.value = '安卓保存失败，请检查权限'
+    }
+    return
+  }
+
+  // ========== 网页端：保留原逻辑 ==========
   const a = document.createElement('a')
   a.href = wavUrl.value
   a.download = downloadFilename.value
-  a.style.display = 'none'
-
   document.body.appendChild(a)
-  a.click() // 强制触发点击
-
-  // 延迟移除，保证安卓能响应
+  a.click()
   setTimeout(() => {
     document.body.removeChild(a)
-  }, 100)
+  }, 120)
 }
 
 onUnmounted(() => {
