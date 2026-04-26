@@ -94,7 +94,7 @@
     </div>
 
     <div v-if="info && info.allTracks && info.allTracks.length > 1" class="playlist-card">
-      <h3>🎵 音轨列表（共 {{ info.allTracks.length }} 首）</h3>
+      <h3>🎵 音频流列表（共 {{ info.allTracks.length }} 首）</h3>
       <div class="playlist-list">
         <div 
           v-for="(track, idx) in info.allTracks" 
@@ -143,13 +143,13 @@ let audioContextStartTime = 0
 let savedTime = 0
 let workerWrapper = null
 let playbackInterval = null
-let currentTrackMeta = null  // 保存当前播放音轨的元数据（包括循环信息）
+let currentTrackMeta = null  // 保存当前播放音频流的元数据（包括循环信息）
 
 function getPlaybackTime() {
   if (isPlaying.value && audioContext) {
     let time = savedTime + (audioContext.currentTime - audioContextStartTime)
     
-    // 根据当前音轨的元数据判断是否循环
+    // 根据当前音频流的元数据判断是否循环
     if (currentTrackMeta && currentTrackMeta.loopStart !== undefined && currentTrackMeta.loopEnd > currentTrackMeta.loopStart) {
       const loopStart = currentTrackMeta.loopStart
       const loopEnd = currentTrackMeta.loopEnd
@@ -379,7 +379,7 @@ function parseVgmstreamMetadata(stdout) {
   return info
 }
 
-// 🔥 加载完成后后台预解码所有音轨
+// 🔥 加载完成后后台预解码所有音频流
 async function preDecodeAllTracks(tracks) {
   for (const track of tracks) {
     try {
@@ -514,7 +514,7 @@ async function loadFile(file) {
       currentTrackIndex: 0,
     }
 
-    // ===== 设置当前音轨的元数据 =====
+    // ===== 设置当前音频流的元数据 =====
     currentTrackMeta = {
       loopStart: meta.loopStart !== undefined ? (meta.loopStart / sampleRate) : undefined,
       loopEnd: meta.loopEnd ? meta.loopEnd / sampleRate : duration,
@@ -676,7 +676,7 @@ async function play() {
   }
 
   try {
-    // 如果还没有设置当前音轨元数据，则从 info.value 初始化
+    // 如果还没有设置当前音频流元数据，则从 info.value 初始化
     if (!currentTrackMeta) {
       currentTrackMeta = {
         loopStart: info.value.loopEnabled ? info.value.loopStart : undefined,
@@ -700,7 +700,7 @@ async function play() {
     source.buffer = decodedBuffer
     source.connect(audioContext.destination)
 
-    // 根据当前音轨的元数据判断是否循环
+    // 根据当前音频流的元数据判断是否循环
     const hasLoop = currentTrackMeta && currentTrackMeta.loopStart !== undefined
     if (hasLoop && currentTrackMeta.loopEnd > currentTrackMeta.loopStart) {
       source.loop = true
@@ -720,7 +720,7 @@ async function play() {
           return
         }
         isPlaying.value = false
-        // 检查当前音轨是否有循环，如果没有则重置
+        // 检查当前音频流是否有循环，如果没有则重置
         const hasLoop = currentTrackMeta && currentTrackMeta.loopStart !== undefined
         if (!hasLoop) {
           status.value = '播放结束'
@@ -905,7 +905,7 @@ async function downloadAllTracks() {
   // =========== 安卓版本 ===========
   if (isAndroidApp) {
     try {
-      status.value = "正在保存音轨..."
+      status.value = "正在保存音频流..."
       for (const track of tracks) {
         const uint8 = new Uint8Array(track.wavData)
         let binary = ''
@@ -922,7 +922,7 @@ async function downloadAllTracks() {
         })
       }
       error.value = ''
-      status.value = `已保存 ${tracks.length} 个音轨到文档文件夹`
+      status.value = `已保存 ${tracks.length} 个音频流到 文档 文件夹`
     } catch (e) {
       console.error('安卓保存失败：', e)
       error.value = '安卓保存失败：' + e.message
@@ -1033,7 +1033,7 @@ async function playTrack(index) {
       loopEnd,
     }
 
-    // ===== 设置当前音轨的元数据 =====
+    // ===== 设置当前音频流的元数据 =====
     currentTrackMeta = {
       loopStart: meta.loopStart !== undefined ? loopStart : undefined,
       loopEnd,
@@ -1055,7 +1055,7 @@ async function playTrack(index) {
 
   } catch (err) {
     console.error(err)
-    error.value = '切换音轨失败：' + err.message
+    error.value = '切换音频流失败：' + err.message
   }
 }
 
